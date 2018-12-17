@@ -22,7 +22,7 @@ import java.util.concurrent.locks.Lock;
  */
 public class DistributedLock implements Lock, Watcher {
 
-    private static ZooKeeper zk = null;
+    private ZooKeeper zk = null;
     // 根节点
     private String ROOT_LOCK = "/locks";
     // 分隔符
@@ -44,7 +44,13 @@ public class DistributedLock implements Lock, Watcher {
      *
      * @param lockPrefix 前缀
      */
-    public DistributedLock(String lockPrefix, long waitTime) {
+    public DistributedLock(String connectString, int sessionTimeout, String lockPrefix, long waitTime) {
+        try {
+            zk = new ZooKeeper(connectString, sessionTimeout, this);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        
         this.lockPrefix = lockPrefix;
         this.waitTime = waitTime;
     }
@@ -52,7 +58,7 @@ public class DistributedLock implements Lock, Watcher {
     public static void createParentNode(String connectString, int sessionTimeout, String rootPath) {
         try {
             // 连接zookeeper
-            zk = new ZooKeeper(connectString, sessionTimeout, null);
+            ZooKeeper zk = new ZooKeeper(connectString, sessionTimeout, null);
             Stat stat = zk.exists(rootPath, false);
             if (stat == null) {
                 // 如果根节点不存在，则创建根节点
