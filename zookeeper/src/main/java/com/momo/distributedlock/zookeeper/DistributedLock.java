@@ -22,35 +22,41 @@ import java.util.concurrent.locks.Lock;
  */
 public class DistributedLock implements Lock, Watcher {
 
-    private ZooKeeper zk = null;
+    private static ZooKeeper zk = null;
     // 根节点
     private String ROOT_LOCK = "/locks";
+    // 分隔符
+    private String splitStr = "_lock_";
     // 竞争的资源
-    private String lockName;
+    private String lockPrefix;
     // 等待的前一个锁
     private String WAIT_LOCK;
     // 当前锁
     private String CURRENT_LOCK;
+    // 等待时间，毫秒
+    private long waitTime;
     // 计数器
     private CountDownLatch countDownLatch;
-    private int sessionTimeout = 30000;
     private List<Exception> exceptionList = new ArrayList<>();
 
     /**
      * 配置分布式锁
      *
-     * @param connectString   连接的url
-     * @param lockName 竞争资源
+     * @param lockPrefix 前缀
      */
-    public DistributedLock(String connectString, String lockName) {
-        this.lockName = lockName;
+    public DistributedLock(String lockPrefix, long waitTime) {
+        this.lockPrefix = lockPrefix;
+        this.waitTime = waitTime;
+    }
+    
+    public static void createParentNode(String connectString, int sessionTimeout, String rootPath) {
         try {
             // 连接zookeeper
-            zk = new ZooKeeper(connectString, sessionTimeout, this);
-            Stat stat = zk.exists(ROOT_LOCK, false);
+            zk = new ZooKeeper(connectString, sessionTimeout, null);
+            Stat stat = zk.exists(rootPath, false);
             if (stat == null) {
                 // 如果根节点不存在，则创建根节点
-                zk.create(ROOT_LOCK, new byte[0], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+                zk.create(rootPath, new byte[0], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
             }
         } catch (IOException e) {
             e.printStackTrace();
@@ -69,11 +75,11 @@ public class DistributedLock implements Lock, Watcher {
         }
         try {
             if (this.tryLock()) {
-                System.out.println(Thread.currentThread().getName() + " " + lockName + "获得了锁");
+                System.out.println(Thread.currentThread().getName() + " " + lockPrefix + "获得了锁");
                 return;
             } else {
                 // 等待锁
-                waitForLock(WAIT_LOCK, sessionTimeout);
+                waitForLock(WAIT_LOCK, waitTime);
             }
         } catch (InterruptedException e) {
             e.printStackTrace();
@@ -90,21 +96,23 @@ public class DistributedLock implements Lock, Watcher {
     @Override
     public boolean tryLock() {
         try {
-            String splitStr = "_lock_";
-            if (lockName.contains(splitStr)) {
+            
+            if (lockPrefix.contains(splitStr)) {
                 throw new LockException("锁名有误");
             }
             // 创建临时有序节点
-            CURRENT_LOCK = zk.create(ROOT_LOCK + "/" + lockName + splitStr, new byte[0],
-                    ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL_SEQUENTIAL);
-            System.out.println(CURRENT_LOCK + " 已经创建");
+            this.createNode();
+            if (CURRENT_LOCK == null || CURRENT_LOCK.length() == 0) {
+                return false;
+            }
+            
             // 取所有子节点
             List<String> subNodes = zk.getChildren(ROOT_LOCK, false);
             // 取出所有lockName的锁
             List<String> lockObjects = new ArrayList<>();
             for (String node : subNodes) {
                 String _node = node.split(splitStr)[0];
-                if (_node.equals(lockName)) {
+                if (_node.equals(lockPrefix)) {
                     lockObjects.add(node);
                 }
             }
@@ -125,14 +133,24 @@ public class DistributedLock implements Lock, Watcher {
         }
         return false;
     }
+    
+    private void createNode() {
+        try {
+            CURRENT_LOCK = zk.create(ROOT_LOCK + "/" + lockPrefix + splitStr, new byte[0],
+                    ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL_SEQUENTIAL);
+            System.out.println(CURRENT_LOCK + " 已经创建");
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
 
     @Override
-    public boolean tryLock(long time, TimeUnit unit) throws InterruptedException {
+    public boolean tryLock(long waitTime, TimeUnit unit) throws InterruptedException {
         try {
             if (this.tryLock()) {
                 return true;
             }
-            return waitForLock(WAIT_LOCK, time);
+            return waitForLock(WAIT_LOCK, waitTime);
         } catch (Exception e) {
             e.printStackTrace();
         }

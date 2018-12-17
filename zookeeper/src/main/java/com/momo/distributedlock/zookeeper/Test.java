@@ -8,12 +8,12 @@ public class Test {
     }
 
     public static void main(String[] args) {
-
+        DistributedLock.createParentNode("dev.tss.com:2181", 30000, "/locks");
 
         Runnable runnable = () -> {
             DistributedLock lock = null;
             try {
-                lock = new DistributedLock("dev.tss.com:2181", "test1");
+                lock = new DistributedLock("dev.tss.com:2181", 20000);
                 lock.lock();
                 secskill();
                 System.out.println(Thread.currentThread().getName() + "正在运行");
