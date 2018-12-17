@@ -29,8 +29,5 @@ redis/src/test/
 redis/target/generated-sources/
 zookeeper/src/test/
 zookeeper/target/generated-sources/
-/redis/redis.iml
-/distributedlock.iml
-/zookeeper/zookeeper.iml
-/redis/target/
-/zookeeper/target/
+*.iml
+**/target/
